@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DUEL — 1v1 Online Shooter</title>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Oswald:wght@600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Oswald:wght=600;700&display=swap');
 
 *{margin:0;padding:0;box-sizing:border-box}
 :root{--red:#ff2233;--blue:#2255ff;--yellow:#ffcc00;--dark:#060810;--panel:#0b0d18;--border:#1e2240;--text:#a8b4d0}
@@ -83,7 +83,6 @@ body{background:var(--dark);color:var(--text);font-family:'Share Tech Mono',mono
 #lock-prompt h2{font-family:'Oswald',sans-serif;font-size:2.3rem;letter-spacing:.2em;color:#fff;margin-bottom:.5rem}
 #lock-prompt p{font-size:.65rem;letter-spacing:.25em;color:#334}
 
-/* Grid lines on floor (decorative CSS) */
 .scanline{position:fixed;inset:0;background:repeating-linear-gradient(0deg,rgba(0,0,0,.03) 0px,rgba(0,0,0,.03) 1px,transparent 1px,transparent 4px);pointer-events:none;z-index:200;display:none}
 </style>
 </head>
@@ -93,7 +92,6 @@ body{background:var(--dark);color:var(--text);font-family:'Share Tech Mono',mono
 <div id="dmg"></div>
 <div class="scanline" id="scanlines"></div>
 
-<!-- MENU -->
 <div id="s-menu" class="screen">
   <div class="title">DUEL</div>
   <div class="sub">1v1 Online Shooter</div>
@@ -107,7 +105,6 @@ body{background:var(--dark);color:var(--text);font-family:'Share Tech Mono',mono
   </div>
 </div>
 
-<!-- HOST LOBBY -->
 <div id="s-host" class="screen hidden">
   <div class="panel">
     <div class="panel-title">HOST GAME</div>
@@ -119,7 +116,6 @@ body{background:var(--dark);color:var(--text);font-family:'Share Tech Mono',mono
   </div>
 </div>
 
-<!-- JOIN LOBBY -->
 <div id="s-join" class="screen hidden">
   <div class="panel">
     <div class="panel-title">JOIN GAME</div>
@@ -133,7 +129,6 @@ body{background:var(--dark);color:var(--text);font-family:'Share Tech Mono',mono
   </div>
 </div>
 
-<!-- HUD -->
 <div id="hud" class="hidden">
   <div id="crosshair"></div>
   <div id="hud-score"><span id="my-score">0</span><em> : </em><span id="op-score">0</span></div>
@@ -163,27 +158,30 @@ body{background:var(--dark);color:var(--text);font-family:'Share Tech Mono',mono
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.4.7/peerjs.min.js"></script>
 <script>
-// ============================================================
-//  DUEL — 1v1 Online Shooter
-//  Three.js r128 + PeerJS 1.4.7
-// ============================================================
-
-const G = (() => {
+(() => {
 'use strict';
 
-// ── DOM refs ──────────────────────────────────────────
 const $ = id => document.getElementById(id);
 const screens = { menu:'s-menu', host:'s-host', join:'s-join' };
 
 function showScreen(name) {
-  Object.values(screens).forEach(id => $( id).classList.add('hidden'));
+  Object.values(screens).forEach(id => $(id).classList.add('hidden'));
   if (name) $(screens[name]).classList.remove('hidden');
 }
 
-// ── Network ───────────────────────────────────────────
 let peer = null, conn = null;
 let isHost = false, connected = false;
 let roomCode = '';
+
+const peerConfig = {
+  debug: 0,
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ]
+  }
+};
 
 function genCode() {
   const ch = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -194,9 +192,9 @@ function hostGame() {
   showScreen('host');
   roomCode = genCode();
   $('host-code').textContent = roomCode;
-  $('host-status').textContent = 'Waiting for opponent…';
+  $('host-status').textContent = 'Connecting to network…';
 
-  peer = new Peer(roomCode, { debug: 0 });
+  peer = new Peer(roomCode, peerConfig);
 
   peer.on('open', id => {
     roomCode = id;
@@ -208,13 +206,10 @@ function hostGame() {
   peer.on('connection', c => {
     conn = c;
     setupConn();
-    $('host-status').textContent = 'Opponent connected! Starting…';
-    setTimeout(startGame, 1200);
   });
 
   peer.on('error', e => {
     if (e.type === 'unavailable-id') {
-      // retry with new code
       peer.destroy();
       hostGame();
     } else {
@@ -230,15 +225,13 @@ function joinGame() {
   if (code.length < 4) { $('join-status').textContent = 'Enter a valid code'; return; }
 
   $('join-status').textContent = 'Connecting…';
-  peer = new Peer(undefined, { debug: 0 });
+  peer = new Peer(undefined, peerConfig);
 
   peer.on('open', () => {
     conn = peer.connect(code, { reliable: true });
     conn.on('open', () => {
       isHost = false;
       setupConn();
-      $('join-status').textContent = 'Connected! Starting…';
-      setTimeout(startGame, 1200);
     });
     conn.on('error', err => { $('join-status').textContent = 'Connection failed'; });
   });
@@ -256,6 +249,16 @@ function copyCode() {
 function setupConn() {
   connected = true;
   conn.on('data', onNetData);
+
+  if (isHost) {
+    $('host-status').textContent = 'Opponent connected! Starting match...';
+    setTimeout(() => {
+      send('handshake_start', {});
+    }, 1000);
+  } else {
+    $('join-status').textContent = 'Syncing configurations...';
+  }
+
   conn.on('close', () => {
     connected = false;
     if (gameRunning) {
@@ -270,13 +273,11 @@ function send(type, extra) {
   try { conn.send({ t: type, ...extra }); } catch(e) {}
 }
 
-// ── Three.js Scene ────────────────────────────────────
 let scene, camera, renderer;
 let gameRunning = false;
 let animId = null;
 let lastT = 0;
 
-// Player
 const pPos = new THREE.Vector3();
 let pYaw = 0, pPitch = 0, pVelY = 0, pOnGround = true;
 let pHP = 100, pAmmo = 30, pAmmoRes = 90;
@@ -287,27 +288,22 @@ const SPAWN = [
   new THREE.Vector3(0, 1.7,  14),
 ];
 
-// Opponent
-const oPos   = new THREE.Vector3();
+const oPos = new THREE.Vector3();
 let oYaw = 0, oPitch = 0;
 let opMesh = null, opHeadPivot = null;
 let oAlive = true;
 
-// Physics constants
 const GRAVITY = -24;
 const JUMP    = 9;
 const SPEED   = 8;
 const SPRINT  = 1.65;
-const P_H     = 1.7;   // camera height above ground
+const P_H     = 1.7;   
 
-// Colliders (cover boxes)
 const colliders = [];
-
 const keys = {};
 let netSendT = 0;
-const NET_HZ = 50; // ms
+const NET_HZ = 50; 
 
-// ── Build scene ────────────────────────────────────────
 function initThree() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x060810);
@@ -333,17 +329,14 @@ function initThree() {
 
 function buildMap() {
   const S = 40, H = 8;
-
   const floorM = new THREE.MeshLambertMaterial({ color: 0x0e0f1e });
   const ceilM  = new THREE.MeshLambertMaterial({ color: 0x080810 });
   const wallM  = new THREE.MeshLambertMaterial({ color: 0x101228 });
   const covM   = new THREE.MeshLambertMaterial({ color: 0x0f1a38 });
 
-  // Floor
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(S, S), floorM);
   floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor);
 
-  // Grid lines on floor
   const gridMat = new THREE.MeshBasicMaterial({ color: 0x141828 });
   for (let i = -18; i <= 18; i += 3) {
     const hLine = new THREE.Mesh(new THREE.PlaneGeometry(S-1, 0.04), gridMat);
@@ -352,11 +345,9 @@ function buildMap() {
     vLine.rotation.x = -Math.PI/2; vLine.position.set(i, 0.005, 0); scene.add(vLine);
   }
 
-  // Ceiling
   const ceil = new THREE.Mesh(new THREE.PlaneGeometry(S, S), ceilM);
   ceil.rotation.x = Math.PI/2; ceil.position.y = H; scene.add(ceil);
 
-  // Walls (N,S,E,W)
   const wallDefs = [
     [0, H/2, -S/2, 0,        S, H, 0.6],
     [0, H/2,  S/2, Math.PI,  S, H, 0.6],
@@ -370,7 +361,6 @@ function buildMap() {
     colliders.push(m);
   });
 
-  // Cover boxes
   const covers = [
     [0,   1,   0,  3.5, 2, 3.5],
     [-7,  1,  -7,  2,   2, 4  ],
@@ -390,18 +380,15 @@ function buildMap() {
     scene.add(m); colliders.push(m);
   });
 
-  // Neon accent strips
   const stripMat = new THREE.MeshBasicMaterial({ color: 0x1a2aff });
   [[-S/2+0.31, 1, 0], [S/2-0.31, 1, 0], [0, 1, -S/2+0.31], [0, 1, S/2-0.31]].forEach(([x,y,z]) => {
-    const s = new THREE.Mesh(new THREE.BoxGeometry(
-      z === 0 ? S-1 : 0.05,  0.06,  z === 0 ? 0.05 : S-1), stripMat);
+    const s = new THREE.Mesh(new THREE.BoxGeometry(z === 0 ? S-1 : 0.05, 0.06, z === 0 ? 0.05 : S-1), stripMat);
     s.position.set(x,y,z); scene.add(s);
   });
   const redStrip = new THREE.MeshBasicMaterial({ color: 0xff1122 });
   const rs = new THREE.Mesh(new THREE.BoxGeometry(S-1, 0.06, 0.05), redStrip);
   rs.position.set(0, 0.02, 0); scene.add(rs);
 
-  // Ceiling lights
   const lightGeom = new THREE.BoxGeometry(1.5, 0.1, 1.5);
   const lightMat  = new THREE.MeshBasicMaterial({ color: 0x4466cc });
   [[-8,8,-8],[-8,8,8],[8,8,-8],[8,8,8],[0,8,0]].forEach(([x,y,z]) => {
@@ -409,10 +396,8 @@ function buildMap() {
     l.position.set(x,y-0.05,z); scene.add(l);
   });
 
-  // Spawn markers
   const spawnMat = new THREE.MeshBasicMaterial({ color: 0x0044ff });
-  const spawnGeoA = new THREE.RingGeometry(0.6, 0.8, 32);
-  const sm1 = new THREE.Mesh(spawnGeoA, spawnMat);
+  const sm1 = new THREE.Mesh(new THREE.RingGeometry(0.6, 0.8, 32), spawnMat);
   sm1.rotation.x = -Math.PI/2; sm1.position.set(0, 0.01, -14); scene.add(sm1);
 
   const spawnMatR = new THREE.MeshBasicMaterial({ color: 0xff2233 });
@@ -422,33 +407,27 @@ function buildMap() {
 
 function buildOpponent() {
   const g = new THREE.Group();
-
   const bodyM = new THREE.MeshLambertMaterial({ color: 0xcc1122 });
   const headM = new THREE.MeshLambertMaterial({ color: 0xff2233 });
   const limM  = new THREE.MeshLambertMaterial({ color: 0xaa0f1c });
   const gunM  = new THREE.MeshLambertMaterial({ color: 0x151525 });
 
-  // Body
   const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.0, 0.3), bodyM);
   body.position.y = 0.95; body.castShadow = true; g.add(body);
 
-  // Head pivot (for pitch)
   opHeadPivot = new THREE.Group();
   opHeadPivot.position.y = 1.62;
   const head = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.46, 0.46), headM);
   opHeadPivot.add(head); g.add(opHeadPivot);
 
-  // Gun
   const gun = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.48), gunM);
   gun.position.set(0.25, 1.38, 0.35); g.add(gun);
 
-  // Legs
   [-0.15, 0.15].forEach(xo => {
     const leg = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.82, 0.26), limM);
     leg.position.set(xo, 0.41, 0); leg.castShadow = true; g.add(leg);
   });
 
-  // Arms
   [-0.42, 0.42].forEach(xo => {
     const arm = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.7, 0.22), limM);
     arm.position.set(xo, 0.9, 0); g.add(arm);
@@ -461,7 +440,6 @@ function buildOpponent() {
 
 function buildLights() {
   scene.add(new THREE.AmbientLight(0x1a1f3a, 0.7));
-
   const dir = new THREE.DirectionalLight(0x3355aa, 0.6);
   dir.position.set(5, 15, 5); dir.castShadow = true;
   dir.shadow.mapSize.set(1024,1024); dir.shadow.camera.far = 80;
@@ -474,7 +452,6 @@ function buildLights() {
   scene.add(new THREE.PointLight(0x4466ff, 0.4, 20, 1));
 }
 
-// ── Game start / stop ─────────────────────────────────
 function startGame() {
   showScreen(null);
   $('gc').classList.remove('hidden');
@@ -493,7 +470,7 @@ function startGame() {
   document.addEventListener('mousemove', onMouse);
   document.addEventListener('mousedown', onMouseDown);
   document.addEventListener('keydown', onKeyDown);
-  document.addEventListener('keyup',   e => { keys[e.code] = false; });
+  document.addEventListener('keyup', e => { keys[e.code] = false; });
 
   lastT = performance.now();
   loop();
@@ -528,60 +505,45 @@ function backMenu() {
   showScreen('menu');
 }
 
-// ── Input ─────────────────────────────────────────────
 let locked = false;
+function reqLock() { $('gc').requestPointerLock?.() || renderer.domElement.requestPointerLock?.(); }
+function onLockChange() { locked = !!(document.pointerLockElement); $('lock-prompt').classList.toggle('hidden', locked); }
 
-function reqLock() {
-  $('gc').requestPointerLock?.() || renderer.domElement.requestPointerLock?.();
-}
-function onLockChange() {
-  locked = !!(document.pointerLockElement);
-  $('lock-prompt').classList.toggle('hidden', locked);
-}
 function onMouse(e) {
   if (!locked || !pAlive) return;
   const s = 0.0022;
   pYaw   -= e.movementX * s;
   pPitch  = Math.max(-1.35, Math.min(1.35, pPitch - e.movementY * s));
 }
+
 function onKeyDown(e) {
   keys[e.code] = true;
   if (e.code === 'KeyR' && !reloading && pAmmo < 30 && pAmmoRes > 0) startReload();
   if (e.code === 'Escape') document.exitPointerLock?.();
-  // Block browser shortcuts during game
   if (['Space','ArrowUp','ArrowDown'].includes(e.code)) e.preventDefault();
 }
+
 function onMouseDown(e) {
   if (e.button !== 0 || !locked || !gameRunning || !pAlive || reloading) return;
   if (pAmmo <= 0) { startReload(); return; }
   shoot();
 }
 
-// ── Shooting ───────────────────────────────────────────
-// Muzzle flash mesh
-let muzzle = null;
-let muzzleTimeout = null;
-
+let muzzle = null, muzzleTimeout = null;
 function getMuzzle() {
   if (!muzzle) {
-    const g = new THREE.SphereGeometry(0.14, 8, 8);
-    const m = new THREE.MeshBasicMaterial({ color: 0xffaa22 });
-    muzzle = new THREE.Mesh(g, m);
-    const pl = new THREE.PointLight(0xffaa22, 3, 4);
-    muzzle.add(pl);
-    scene.add(muzzle);
-    muzzle.visible = false;
+    muzzle = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffaa22 }));
+    muzzle.add(new THREE.PointLight(0xffaa22, 3, 4));
+    scene.add(muzzle); muzzle.visible = false;
   }
   return muzzle;
 }
 
-// Active bullet trails
 const trails = [];
 
 function shoot() {
   pAmmo--; updateHUD();
 
-  // Muzzle flash
   const mf = getMuzzle();
   const fwd = new THREE.Vector3(0, 0, -0.9).applyEuler(new THREE.Euler(pPitch, pYaw, 0, 'YXZ'));
   mf.position.copy(pPos).add(new THREE.Vector3(0, 0.05, 0)).add(fwd);
@@ -589,15 +551,12 @@ function shoot() {
   clearTimeout(muzzleTimeout);
   muzzleTimeout = setTimeout(() => { mf.visible = false; }, 60);
 
-  // Crosshair spread
   const xhair = $('crosshair');
   xhair.classList.add('spread');
   setTimeout(() => xhair.classList.remove('spread'), 120);
 
-  // Ray direction
   const dir = new THREE.Vector3(0,0,-1).applyEuler(new THREE.Euler(pPitch, pYaw, 0,'YXZ'));
 
-  // Hit detection against opponent (sphere of radius 0.72)
   if (oAlive && opMesh) {
     const oCenter = opMesh.position.clone().add(new THREE.Vector3(0, 1.1, 0));
     const toOp = oCenter.clone().sub(pPos);
@@ -605,7 +564,6 @@ function shoot() {
     if (tca > 0) {
       const d2 = toOp.lengthSq() - tca*tca;
       if (d2 < 0.72*0.72) {
-        // Check headshot (tighter sphere at head)
         const oHead = opMesh.position.clone().add(new THREE.Vector3(0, 1.7, 0));
         const th = oHead.clone().sub(pPos); const tca2 = th.dot(dir);
         const d2h = th.lengthSq() - tca2*tca2;
@@ -616,20 +574,15 @@ function shoot() {
     }
   }
 
-  // Bullet trail
   const trailLen = 22;
   const trailEnd = pPos.clone().add(new THREE.Vector3(0,0.05,0)).add(dir.clone().multiplyScalar(trailLen));
   const mid = pPos.clone().add(trailEnd).multiplyScalar(0.5);
-  const tg = new THREE.CylinderGeometry(0.012, 0.012, trailLen, 4);
-  const tm = new THREE.MeshBasicMaterial({ color: 0xffee88 });
-  const trail = new THREE.Mesh(tg, tm);
+  const trail = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, trailLen, 4), new THREE.MeshBasicMaterial({ color: 0xffee88 }));
   trail.position.copy(mid);
-  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
-  trail.quaternion.copy(q);
+  trail.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dir));
   trail.birth = performance.now();
   scene.add(trail); trails.push(trail);
 
-  // Send to opponent (for visual)
   send('shoot', {
     ox: pPos.x, oy: pPos.y + 0.05, oz: pPos.z,
     dx: dir.x, dy: dir.y, dz: dir.z
@@ -642,12 +595,9 @@ function showHitMark(headshot) {
   const xhair = $('crosshair');
   xhair.classList.add('hit');
   setTimeout(() => xhair.classList.remove('hit'), 130);
-  if (headshot) {
-    addKillFeed('🎯 HEADSHOT');
-  }
+  if (headshot) addKillFeed('🎯 HEADSHOT');
 }
 
-// Bullet trails: clear after 80ms
 function updateTrails(now) {
   for (let i = trails.length-1; i >= 0; i--) {
     if (now - trails[i].birth > 80) {
@@ -658,7 +608,6 @@ function updateTrails(now) {
   }
 }
 
-// ── Reload ─────────────────────────────────────────────
 function startReload() {
   if (reloading || pAmmo >= 30 || pAmmoRes <= 0) return;
   reloading = true;
@@ -678,21 +627,17 @@ function startReload() {
   }, 2000);
 }
 
-// ── Take damage ────────────────────────────────────────
 function takeDamage(dmg) {
   if (!pAlive) return;
   pHP = Math.max(0, pHP - dmg);
   updateHUD();
-  const dmgEl = $('dmg');
-  dmgEl.classList.add('flash');
-  setTimeout(() => dmgEl.classList.remove('flash'), 120);
+  $('dmg').classList.add('flash');
+  setTimeout(() => $('dmg').classList.remove('flash'), 120);
   if (pHP <= 0) die();
 }
 
 function die() {
-  pAlive = false;
-  opScore++;
-  updateScore();
+  pAlive = false; opScore++; updateScore();
   addKillFeed('ENEMY KILLED YOU');
   send('died', {});
   setCenterMsg('YOU DIED', 2500);
@@ -704,12 +649,20 @@ function die() {
   }, 3000);
 }
 
-// ── Network receive ────────────────────────────────────
 function onNetData(msg) {
+  if (msg.t === 'handshake_start') {
+    send('handshake_reply', {});
+    startGame();
+    return;
+  }
+  if (msg.t === 'handshake_reply') {
+    startGame();
+    return;
+  }
+
   if (!gameRunning) return;
   switch (msg.t) {
     case 'pos':
-      // Smooth lerp opponent position
       oPos.set(msg.x, msg.y, msg.z);
       oYaw = msg.ry; oPitch = msg.p;
       if (opMesh) {
@@ -725,9 +678,7 @@ function onNetData(msg) {
       takeDamage(msg.d);
       break;
     case 'died':
-      oAlive = false;
-      myScore++;
-      updateScore();
+      oAlive = false; myScore++; updateScore();
       addKillFeed('YOU KILLED ENEMY');
       if (opMesh) opMesh.visible = false;
       break;
@@ -735,8 +686,6 @@ function onNetData(msg) {
       oAlive = true;
       if (opMesh) opMesh.visible = true;
       opMesh.position.copy(SPAWN[isHost ? 1 : 0]);
-      break;
-    case 'reload':
       break;
   }
 }
@@ -747,20 +696,15 @@ function showOpponentTrail(msg) {
   const trailLen = 22;
   const end = ori.clone().add(dir.clone().multiplyScalar(trailLen));
   const mid = ori.clone().add(end).multiplyScalar(0.5);
-  const tg = new THREE.CylinderGeometry(0.012, 0.012, trailLen, 4);
-  const tm = new THREE.MeshBasicMaterial({ color: 0xff5555 });
-  const trail = new THREE.Mesh(tg, tm);
+  const trail = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, trailLen, 4), new THREE.MeshBasicMaterial({ color: 0xff5555 }));
   trail.position.copy(mid);
-  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
-  trail.quaternion.copy(q);
+  trail.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dir));
   trail.birth = performance.now();
   scene.add(trail); trails.push(trail);
 }
 
-// ── Movement & Physics ─────────────────────────────────
 function updateMovement(dt) {
   if (!pAlive) {
-    // dead: just update camera orientation; drop into floor camera
     camera.position.copy(pPos).add(new THREE.Vector3(0, -0.5, 0));
     camera.rotation.order = 'YXZ';
     camera.rotation.y = pYaw; camera.rotation.x = pPitch;
@@ -779,9 +723,10 @@ function updateMovement(dt) {
   if (mx || mz) {
     const len = Math.hypot(mx, mz);
     mx /= len; mz /= len;
+    
     const cos = Math.cos(pYaw), sin = Math.sin(pYaw);
-    pPos.x += (mx*cos - mz*sin) * spd * dt;
-    pPos.z += (mx*sin + mz*cos) * spd * dt;
+    pPos.x += (mx * cos - mz * sin) * spd * dt;
+    pPos.z += (mx * sin + mz * cos) * spd * dt;
   }
 
   if (keys['Space'] && pOnGround) { pVelY = JUMP; pOnGround = false; }
@@ -790,12 +735,10 @@ function updateMovement(dt) {
 
   if (pPos.y <= P_H) { pPos.y = P_H; pVelY = 0; pOnGround = true; }
 
-  // Arena bounds
   const B = 19.3;
   pPos.x = Math.max(-B, Math.min(B, pPos.x));
   pPos.z = Math.max(-B, Math.min(B, pPos.z));
 
-  // Cover collision (AABB push-out)
   const R = 0.35;
   for (const col of colliders) {
     const box = new THREE.Box3().setFromObject(col);
@@ -811,14 +754,12 @@ function updateMovement(dt) {
     }
   }
 
-  // Camera
   camera.position.copy(pPos);
   camera.rotation.order = 'YXZ';
   camera.rotation.y = pYaw;
   camera.rotation.x = pPitch;
 }
 
-// ── Game loop ─────────────────────────────────────────
 function loop() {
   animId = requestAnimationFrame(loop);
   const now = performance.now();
@@ -829,7 +770,6 @@ function loop() {
   updateMovement(dt);
   updateTrails(now);
 
-  // Send position at ~20Hz
   if (now - netSendT > NET_HZ) {
     netSendT = now;
     send('pos', {
@@ -841,7 +781,6 @@ function loop() {
   renderer.render(scene, camera);
 }
 
-// ── HUD ────────────────────────────────────────────────
 function updateHUD() {
   $('hp-fill').style.width = pHP + '%';
   $('hp-fill').style.background = pHP > 50 ? '#ff2233' : pHP > 25 ? '#ff7700' : '#ff0000';
@@ -873,9 +812,12 @@ function setCenterMsg(text, dur) {
   if (dur) cmsgTimer = setTimeout(() => el.classList.remove('on'), dur);
 }
 
-// ── Public API ────────────────────────────────────────
-return { hostGame, showJoin, joinGame, copyCode, backMenu };
+// Global hook up so HTML click events can access it
+window.G = { hostGame, showJoin, joinGame, copyCode, backMenu };
+
 })();
 </script>
 </body>
 </html>
+
+```
