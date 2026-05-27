@@ -1,0 +1,40 @@
+
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:monospace}
+  .wrap{padding:2rem;max-width:480px;margin:auto}
+  .title{font-size:22px;font-weight:700;margin-bottom:1.5rem;color:var(--color-text-primary)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:1.2rem}
+  .card{border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:1rem;cursor:pointer;transition:border-color 0.15s}
+  .card:hover{border-color:var(--color-border-primary)}
+  .card.selected{border-color:var(--color-text-primary)}
+  .card-name{font-size:15px;font-weight:500;color:var(--color-text-primary);margin-bottom:4px}
+  .card-desc{font-size:13px;color:var(--color-text-secondary);line-height:1.4}
+  button{padding:9px 20px;border-radius:var(--border-radius-md);cursor:pointer;font-size:13px;font-weight:500;border:1px solid var(--color-border-secondary);background:var(--color-background-primary);color:var(--color-text-primary)}
+  button:disabled{opacity:0.35;cursor:not-allowed}
+  button:not(:disabled):hover{background:var(--color-background-secondary)}
+</style>
+<h2 style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)">Game entry menu</h2>
+<div class="wrap">
+  <div class="title">Select a game</div>
+  <div class="grid">
+    <div class="card" data-game="Racing Blitz" onclick="pick(this)">
+      <div class="card-name">Racing Blitz</div>
+      <div class="card-desc">High-speed circuit racing with drift mechanics</div>
+    </div>
+    <div class="card" data-game="Shadow Arena" onclick="pick(this)">
+      <div class="card-name">Shadow Arena</div>
+      <div class="card-desc">Battle royale with elemental abilities</div>
+    </div>
+  </div>
+  <button id="btn" disabled onclick="go()">Enter game →</button>
+</div>
+<script>
+  let sel=null;
+  function pick(el){
+    document.querySelectorAll('.card').forEach(c=>c.classList.remove('selected'));
+    el.classList.add('selected');
+    sel=el.dataset.game;
+    document.getElementById('btn').disabled=false;
+  }
+  function go(){if(sel)sendPrompt(`I selected "${sel}" — what happens next?`);}
+</script>
